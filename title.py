@@ -303,19 +303,6 @@ class TitanicSinkingSimulator:
         # Calculate ship's vertical position (sinking)
         self.sink_pct = np.minimum(water_vol / ship_volume, 1) * 100
         
-        # Calculate water temperature effects on survival
-        water_temp = self.temperature.get()
-        
-        # Estimate survival time in cold water (minutes)
-        if water_temp <= 0:
-            self.survival_time_in_water = 15  # Less than 15 minutes in freezing water
-        elif water_temp <= 5:
-            self.survival_time_in_water = 30
-        elif water_temp <= 10:
-            self.survival_time_in_water = 60
-        else:
-            self.survival_time_in_water = 120
-        
         # Calculate sinking depth (meters)
         ship_height = 28  # approximate height of Titanic in meters
         self.depth = self.sink_pct / 100 * ship_height
@@ -345,40 +332,6 @@ class TitanicSinkingSimulator:
                 # Rapidly increasing tilt after 50% flooded
                 remaining_pct = pct - 50
                 self.tilt_angle[i] = 15 + (remaining_pct / 50) * (max_tilt - 15)
-        
-        # Define constants for survival calculations
-        evac_capacity = 1178  # Number of lifeboat seats on Titanic
-        total_passengers = 2223  # Approximate number of people on Titanic
-                
-        # Calculate survival metrics
-        if self.sink_time:
-            # Evacuation efficiency based on time
-            if self.sink_time < 60:  # Less than 1 hour
-                evac_efficiency = 0.4  # 40% of capacity utilized
-            elif self.sink_time < 120:  # Less than 2 hours
-                evac_efficiency = 0.6  # 60% of capacity utilized
-            else:
-                evac_efficiency = 0.8  # 80% of capacity utilized
-                
-            self.survivors = min(evac_capacity * evac_efficiency, total_passengers)
-            self.survival_rate = (self.survivors / total_passengers) * 100
-            
-            # Calculate casualties from water exposure
-            if self.sink_time > 60:
-                # More time to launch lifeboats means fewer people in water
-                people_in_water = total_passengers - self.survivors
-                water_casualty_rate = 0.9  # 90% casualty rate for those in water
-                self.water_casualties = people_in_water * water_casualty_rate
-            else:
-                # Less time means more people end up in water
-                people_in_water = total_passengers * 0.6
-                water_casualty_rate = 0.95  # 95% casualty rate for those in water
-                self.water_casualties = people_in_water * water_casualty_rate
-        else:
-            # Ship didn't sink in simulation time
-            self.survivors = total_passengers * 0.9  # Most people survive if ship doesn't sink
-            self.survival_rate = 90.0
-            self.water_casualties = total_passengers * 0.1  # Some casualties still occur
 
     def setup_plots(self):
         """Setup plots with calculated data"""
@@ -413,16 +366,20 @@ class TitanicSinkingSimulator:
         # Setup ship visualization
         self.ship_ax.set_title("Ship Status")
         self.ship_ax.set_xlim(0, 10)
-        self.ship_ax.set_ylim(-2, 2)
+        self.ship_ax.set_ylim(-3, 3)  # Increased view range
         self.ship_ax.axis('equal')
         
-        # Draw water
-        self.water_rect = patches.Rectangle((0, -2), 10, 1, 
+        # Draw water at y=0 (sea level)
+        self.water_rect = patches.Rectangle((0, -3), 10, 3, 
                                            facecolor='lightblue', alpha=0.8)
         self.ship_ax.add_patch(self.water_rect)
         
-        # Draw ship hull
-        self.ship_rect = patches.Rectangle((2.5, 0), 5, 0.8, 
+        # Add water surface line
+        self.ship_ax.axhline(y=0, color='blue', linestyle='-', linewidth=1.5)
+        
+        # Draw ship hull - partially submerged (60% below water)
+        hull_height = 1.2
+        self.ship_rect = patches.Rectangle((2.5, -0.6), 5, hull_height, 
                                           facecolor='saddlebrown', edgecolor='black')
         self.ship_ax.add_patch(self.ship_rect)
         
@@ -430,13 +387,13 @@ class TitanicSinkingSimulator:
         self.compartment_rects = []
         comp_width = 5 / self.compartments.get()
         for i in range(self.compartments.get()):
-            rect = patches.Rectangle((2.5 + i * comp_width, 0), comp_width, 0.8,
+            rect = patches.Rectangle((2.5 + i * comp_width, -0.6), comp_width, hull_height,
                                     facecolor='none', edgecolor='black', linestyle=':')
             self.ship_ax.add_patch(rect)
             self.compartment_rects.append(rect)
             
-        # Draw superstructure
-        self.superstructure = patches.Rectangle((3.5, 0.8), 3, 0.6, 
+        # Draw superstructure (above water)
+        self.superstructure = patches.Rectangle((3.5, 0.6), 3, 0.6, 
                                                facecolor='darkgray', edgecolor='black')
         self.ship_ax.add_patch(self.superstructure)
         
@@ -444,22 +401,15 @@ class TitanicSinkingSimulator:
         stack_positions = [4, 5, 6]
         self.smokestacks = []
         for pos in stack_positions:
-            stack = patches.Rectangle((pos, 1.4), 0.2, 0.4, 
+            stack = patches.Rectangle((pos, 1.2), 0.2, 0.4, 
                                      facecolor='black', edgecolor='black')
             self.ship_ax.add_patch(stack)
             self.smokestacks.append(stack)
         
-        # Add people figures for scale
-        self.people = []
-        for i in range(3):
-            person = patches.Circle((3.5 + i*0.5, 1.5), 0.05, facecolor='blue')
-            self.ship_ax.add_patch(person)
-            self.people.append(person)
-            
         # Add lifeboats
         self.lifeboats = []
         for i in range(2):
-            lifeboat = patches.Ellipse((3 + i*4, 0), 0.5, 0.2, facecolor='brown')
+            lifeboat = patches.Ellipse((3 + i*4, 0.1), 0.5, 0.2, facecolor='brown')
             self.ship_ax.add_patch(lifeboat)
             self.lifeboats.append(lifeboat)
         
@@ -475,7 +425,7 @@ class TitanicSinkingSimulator:
         # Get current index
         i = self.ani_idx
         
-        # Update forces graph - convert to MN for cleaner display
+        # Update forces graph
         self.line_buoy.set_data(self.time_pts[:i], self.buoyancy[:i]/1e6)
         self.line_sink.set_data(self.time_pts[:i], self.sink_pct[:i])
         self.line_tilt.set_data(self.time_pts[:i], self.tilt_angle[:i])
@@ -487,12 +437,12 @@ class TitanicSinkingSimulator:
             current_tilt = self.tilt_angle[i-1]
             
             # Update ship position (sinking)
-            water_level = -0.5
-            ship_y_pos = 0 - (current_sinking * 1.3)
+            # Start at -0.6 (60% submerged) and sink lower
+            ship_y_pos = -0.6 - (current_sinking * 1.8)
             
             # Create transformation for the tilt
             center_x = 5.0  # Center of ship
-            center_y = ship_y_pos + 0.4  # Middle of ship height
+            center_y = ship_y_pos + 0.6  # Middle of ship height
             
             # Create a rotation transform around the center point
             t = mtransforms.Affine2D().rotate_deg_around(center_x, center_y, current_tilt)
@@ -501,11 +451,13 @@ class TitanicSinkingSimulator:
             self.ship_rect.set_y(ship_y_pos)
             self.ship_rect.set_transform(t + self.ship_ax.transData)
             
-            self.superstructure.set_y(ship_y_pos + 0.8)
+            # Update superstructure (positioned above the hull)
+            self.superstructure.set_y(ship_y_pos + 1.2)
             self.superstructure.set_transform(t + self.ship_ax.transData)
             
+            # Update smokestacks
             for stack in self.smokestacks:
-                stack.set_y(ship_y_pos + 1.4)
+                stack.set_y(ship_y_pos + 1.8)
                 stack.set_transform(t + self.ship_ax.transData)
                 
             # Update compartments
@@ -515,24 +467,12 @@ class TitanicSinkingSimulator:
                 
                 # Mark breached compartments with water
                 if j < self.breached_compartments.get() and current_sinking > 0:
-                    water_height = min(0.8, current_sinking * 2 * 0.8)
+                    water_height = min(1.2, current_sinking * 2.5)
                     rect.set_facecolor('lightblue')
                     rect.set_alpha(0.7)
                     # Adjust the height based on sinking percentage
                     if water_height > 0:
                         rect.set_height(water_height)
-            
-            # Update people and lifeboats based on sinking percentage
-            for person in self.people:
-                if current_sinking < 0.5:
-                    # People on deck
-                    person.set_transform(t + self.ship_ax.transData)
-                else:
-                    # People in water
-                    person_x, _ = person.center
-                    person.center = (person_x + (current_sinking - 0.5), -0.4)
-                    person.set_transform(self.ship_ax.transData)  # Reset transform
-                    person.set_facecolor('red')  # Danger!
             
             # Update lifeboats - move away from ship as it sinks
             for boat_idx, lifeboat in enumerate(self.lifeboats):
@@ -540,9 +480,9 @@ class TitanicSinkingSimulator:
                     lifeboat_x, _ = lifeboat.center
                     drift = min(3, current_sinking * 5)
                     if boat_idx == 0:
-                        lifeboat.center = (lifeboat_x - drift, -0.4)
+                        lifeboat.center = (lifeboat_x - drift, 0.1)  # On water
                     else:
-                        lifeboat.center = (lifeboat_x + drift, -0.4)
+                        lifeboat.center = (lifeboat_x + drift, 0.1)  # On water
                     
             # Update the ship canvas
             self.ship_canvas.draw()
@@ -587,13 +527,9 @@ class TitanicSinkingSimulator:
         # Add critical info if available
         if self.critical_time is not None:
             results.append(f"\nCritical point: {self.critical_time:.1f} min")
-            
+                
         if self.sink_time is not None:
             results.append(f"Total sinking time: {self.sink_time:.1f} min")
-            
-        if hasattr(self, 'survivors'):
-            results.append(f"\nEstimated survivors: {int(self.survivors)}")
-            results.append(f"Survival rate: {self.survival_rate:.1f}%")
         
         self.results_text.insert(tk.END, "\n".join(results))
         self.results_text.config(state=tk.DISABLED)
@@ -604,11 +540,7 @@ class TitanicSinkingSimulator:
             analysis = (
                 f"Titanic Sinking Analysis\n\n"
                 f"The ship didn't completely sink during the simulation timeframe.\n"
-                f"Water temperature: {self.temperature.get():.1f}°C\n"
-                f"Survival time in water: {self.survival_time_in_water} minutes\n\n"
-                f"Passengers & Crew: 2,223\n"
-                f"Estimated survivors: {int(self.survivors)}\n"
-                f"Survival rate: {self.survival_rate:.1f}%\n\n"
+                f"Water temperature: {self.temperature.get():.1f}°C\n\n"
                 f"Physical analysis:\n"
                 f"- Maximum water ingress: {max(self.sink_pct):.1f}%\n"
                 f"- Maximum tilt angle: {max(self.tilt_angle):.1f}°\n"
@@ -619,13 +551,7 @@ class TitanicSinkingSimulator:
             analysis = (
                 f"Titanic Sinking Analysis\n\n"
                 f"Total sinking time: {self.sink_time:.1f} minutes\n"
-                f"Water temperature: {self.temperature.get():.1f}°C\n"
-                f"Survival time in water: {self.survival_time_in_water} minutes\n\n"
-                f"Passengers & Crew: 2,223\n"
-                f"Lifeboat capacity: 1,178\n"
-                f"Estimated survivors: {int(self.survivors)}\n"
-                f"People lost: {int(2223 - self.survivors)}\n"
-                f"Survival rate: {self.survival_rate:.1f}%\n\n"
+                f"Water temperature: {self.temperature.get():.1f}°C\n\n"
                 f"Physical analysis:\n"
                 f"- Critical buoyancy failure at {self.critical_time:.1f} minutes\n"
                 f"- Maximum tilt angle: {max(self.tilt_angle):.1f}°\n"
