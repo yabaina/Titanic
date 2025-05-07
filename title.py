@@ -407,8 +407,8 @@ class TitanicSinkingSimulator:
         (self.line_tilt,) = self.ax2.plot([], [], 'm--', label="Tilt Angle (°)")
         
         # Add legends
-        self.ax.legend(loc='upper left')
-        self.ax2.legend(loc='upper right')
+        self.ax.legend(loc='upper right')
+        self.ax2.legend(loc='upper right', bbox_to_anchor=(1, 0.9))
         
         # Setup ship visualization
         self.ship_ax.set_title("Ship Status")
